@@ -1,0 +1,18 @@
+digraph {
+  outputorder=edgesfirst;
+  1[shape=ellipse, fillcolor=salmon, style=filled, label="start"];
+  2[shape=ellipse, fillcolor=palegreen2, style=filled, label="int i, n, v, max"];
+  3[shape=ellipse, fillcolor=lightyellow, style=filled, label="i = read_int()"];
+  4[shape=ellipse, fillcolor=lightyellow, style=filled, label="if (i < n)"];
+  5[shape=ellipse, fillcolor=lightyellow, style=filled, label="if (v > max)"];
+  6[shape=ellipse, fillcolor=lightyellow, style=filled, label="max = v"];
+  9[shape=ellipse, fillcolor=salmon, style=filled, label="stop"];
+  1 -> 2[style = ""];
+  2 -> 3[style = ""];
+  3 -> 4[style = ""];
+  4 -> 5[style = "", label="T"];
+  4 -> 9[style = "", label="F"];
+  5 -> 6[style = "", label="T"];
+  5 -> 9[style = "", label="F"];
+  6 -> 9[style = ""];
+}

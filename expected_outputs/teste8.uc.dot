@@ -1,0 +1,25 @@
+digraph {
+  outputorder=edgesfirst;
+  1[shape=ellipse, fillcolor=salmon, style=filled, label="start"];
+  2[shape=ellipse, fillcolor=palegreen2, style=filled, label="int a, b, c, d, cond"];
+  3[shape=ellipse, fillcolor=lightyellow, style=filled, label="a = 0"];
+  4[shape=ellipse, fillcolor=lightyellow, style=filled, label="b = 1"];
+  5[shape=ellipse, fillcolor=lightyellow, style=filled, label="if (cond == 1)"];
+  6[shape=ellipse, fillcolor=lightyellow, style=filled, label="a = a + 2"];
+  7[shape=ellipse, fillcolor=lightyellow, style=filled, label="c = a"];
+  8[shape=ellipse, fillcolor=lightyellow, style=filled, label="a = a + 1"];
+  9[shape=ellipse, fillcolor=lightyellow, style=filled, label="b = b + 1"];
+  11[shape=ellipse, fillcolor=lightyellow, style=filled, label="d = a + b"];
+  12[shape=ellipse, fillcolor=salmon, style=filled, label="stop"];
+  1 -> 2[style = ""];
+  2 -> 3[style = ""];
+  3 -> 4[style = ""];
+  4 -> 5[style = ""];
+  5 -> 6[style = "", label="T"];
+  5 -> 8[style = "", label="F"];
+  6 -> 7[style = ""];
+  7 -> 11[style = ""];
+  8 -> 9[style = ""];
+  9 -> 11[style = ""];
+  11 -> 12[style = ""];
+}

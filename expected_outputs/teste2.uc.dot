@@ -1,0 +1,29 @@
+digraph {
+  outputorder=edgesfirst;
+  1[shape=ellipse, fillcolor=salmon, style=filled, label="start"];
+  2[shape=ellipse, fillcolor=palegreen2, style=filled, label="int x, y, total, sum, num"];
+  3[shape=ellipse, fillcolor=lightyellow, style=filled, label="scanf (x)"];
+  4[shape=ellipse, fillcolor=lightyellow, style=filled, label="scanf (y)"];
+  5[shape=ellipse, fillcolor=lightyellow, style=filled, label="total = 0"];
+  6[shape=ellipse, fillcolor=lightyellow, style=filled, label="num = 0"];
+  7[shape=ellipse, fillcolor=lightyellow, style=filled, label="if (x <= 1)"];
+  8[shape=ellipse, fillcolor=lightyellow, style=filled, label="sum = y"];
+  9[shape=ellipse, fillcolor=lightyellow, style=filled, label="scanf (x)"];
+  10[shape=ellipse, fillcolor=lightyellow, style=filled, label="total = x * y"];
+  12[shape=ellipse, fillcolor=lightyellow, style=filled, label="printf(total)"];
+  13[shape=ellipse, fillcolor=lightyellow, style=filled, label="printf(sum)"];
+  14[shape=ellipse, fillcolor=salmon, style=filled, label="stop"];
+  1 -> 2[style = ""];
+  2 -> 3[style = ""];
+  3 -> 4[style = ""];
+  4 -> 5[style = ""];
+  5 -> 6[style = ""];
+  6 -> 7[style = ""];
+  7 -> 8[style = "", label="T"];
+  7 -> 9[style = "", label="F"];
+  8 -> 12[style = ""];
+  9 -> 10[style = ""];
+  10 -> 12[style = ""];
+  12 -> 13[style = ""];
+  13 -> 14[style = ""];
+}

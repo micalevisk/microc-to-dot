@@ -1,0 +1,368 @@
+/*
+	microc
+*/
+
+import java.io.*;
+import java.util.*;
+
+
+COMPILER microc
+
+// ---------------------------------------------- Parser  ---------------------------------------------- //
+private Stack<Pair<TipoStatement,Vertex>> flowStack = new Stack<>();
+private Graph grafoMain = null;
+private Vertex lastVertex = null;
+private Vertex stopVertex = null;
+private String currExpr = "";
+
+
+private String getCurrExpr() {
+	return currExpr.trim()
+		.replaceFirst("[(] ", "(")
+		.replaceAll(" ([,;])", "$1")
+		.replaceAll("\"","'");
+}
+
+
+private Vertex getFirstValidSuccessor(Vertex targetVertex) {
+	Vertex foundVertex = null;
+	LinkedList<Vertex> sucessors = grafoMain.getSuccessors(targetVertex);
+	for (Vertex s : sucessors) {
+		TipoStatement skind = ((Statement)s.info).kind;
+		if (skind != TipoStatement.CONTROL) return s;
+		else return getFirstValidSuccessor(s);
+	}
+	return foundVertex;
+}
+
+private void reachEndOfFunction(Vertex v) {
+	if (stopVertex == null) {
+		stopVertex = addVertexNaMain("stop", TipoStatement.END_OF_FUNCTION);
+	} else {
+		String label = "";
+		TipoStatement kind = ((Statement)v.info).kind;
+		if (kind == TipoStatement.CONDITIONAL_ELSE) label = "F";
+		grafoMain.addEdge(v, stopVertex, label);
+	}
+}
+
+
+private int verticeCounter = 0;
+private Vertex addVertexNaMain(String statementName, TipoStatement kind, boolean linkToLast, String edgeLabel) {
+	if (grafoMain == null) return null;
+
+	int id = ++verticeCounter;
+	Statement st = new Statement(id, statementName, kind);
+	String vertexName = Integer.toString(id);
+	if (kind == TipoStatement.CONTROL) vertexName = statementName;
+	Vertex newVertex = grafoMain.addVertex(vertexName, st);
+
+	if (lastVertex != null) {
+		TipoStatement lastKind = ((Statement)lastVertex.info).kind;
+		// Definir a relação do start com a primeira instrução
+		if (lastKind == TipoStatement.START_OF_FUNCTION) {
+			st.setKind(TipoStatement.FIRST_STATEMENT);
+		}else if (lastKind == TipoStatement.CONDITIONAL_IF) {
+			edgeLabel = "T";
+		}else if (lastKind == TipoStatement.CONDITIONAL_ELSE) {
+			edgeLabel = "F";
+		}
+	}
+
+	if (linkToLast) addEdgeTo(newVertex, edgeLabel);
+	lastVertex = newVertex;
+	if (kind == TipoStatement.LEAVE_FUNCTION) {
+		reachEndOfFunction(newVertex);
+	}
+
+	return newVertex;
+}
+private Vertex addVertexNaMain(String statementName, TipoStatement kind) {
+	return addVertexNaMain(statementName, kind, true, "");
+}
+private Vertex addVertexNaMain(TipoStatement kind) {
+	return addVertexNaMain(getCurrExpr(), kind);
+}
+
+private int verticeDeControleCounter = 0;
+private Vertex addControlVertex() {
+	int id = ++verticeDeControleCounter;
+	String vertexName = "C" + Integer.toString(id);
+	return grafoMain.addVertex(vertexName, new Statement(id, "C", TipoStatement.CONTROL));
+}
+
+public Vertex getLastVertex() {
+	return lastVertex;
+}
+public void setLastVertex(Vertex newLastVertex) {
+	lastVertex = newLastVertex;
+}
+
+private void addEdgeTo(Vertex targetVertex, String label) {
+	Vertex lastVertex = getLastVertex();
+	if (lastVertex != null ) {
+		grafoMain.addEdge(lastVertex.name, targetVertex.name, label);
+	}
+	currExpr = "";
+}
+private void addEdgeTo(Vertex targetVertex) {
+	addEdgeTo(targetVertex, "");
+}
+
+
+public void printToDot() {
+	DOTCom d = DOTCom.createFromGraph(grafoMain);
+	if (d == null) {
+		System.out.println("codigo-fonte invalido!");
+	} else {
+		d.print();
+	}
+}
+
+
+// ----------------------------------------------------------------------------------------------------- //
+
+CHARACTERS
+	semAspas 	= ANY - '"'.
+	letra 		= "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".
+	digito 		= "0123456789".
+
+TOKENS
+	id 		    = letra {letra | digito}.
+	strConst 	= '"' {semAspas} '"'.
+	num 		  = ['-'] digito { digito } .
+
+COMMENTS FROM "/*" TO "*/" NESTED
+
+IGNORE '\r' + '\n' + '\t'
+
+PRODUCTIONS
+
+	microc
+	= { DeclConst } { Definicao }
+		(.
+			reachEndOfFunction(getLastVertex());
+
+			// fazer a magia AKA reduzir (squash) os vértices de controle
+			List< Pair< Vertex,Pair<Vertex,Edge> > > newEdgesToBuild = new ArrayList<>();
+			for (Vertex v : grafoMain.getVertices()) {
+				for (Edge e : grafoMain.getEdges(v.name)) { // aresta v -> w
+					TipoStatement wkind = ((Statement)e.dest.info).kind;
+					if (wkind == TipoStatement.CONTROL) {
+						Vertex verticeCorrigido = getFirstValidSuccessor(e.dest);
+						if (verticeCorrigido != null) {
+							newEdgesToBuild.add( Pair.of(
+								verticeCorrigido,
+								Pair.of(v, e)
+							) );
+						}
+					}
+				}
+			}
+			// apagar os vértices de controle e arestas associadas
+			for (Pair< Vertex,Pair<Vertex,Edge> > p : newEdgesToBuild) {
+				Vertex verticeCorrigido = p.getKey();
+				Vertex v = p.getValue().getKey();
+				Edge e = p.getValue().getValue();
+
+				grafoMain.addEdge(v, verticeCorrigido, e.info);
+				grafoMain.delVertex(e.dest.name, false);
+			}
+		.)
+	.
+
+  DeclConst
+	= "const" Tipo id "=" num ";".
+
+	Definicao         (. boolean isFunctionMain = false; currExpr = ""; .)
+	= ( Tipo | "void" (. isFunctionMain = true; .) )
+		DesigI          (. isFunctionMain = isFunctionMain && t.val.equals("main"); .)
+		(.
+		if (isFunctionMain) {
+			grafoMain = new Graph();
+			addVertexNaMain("start", TipoStatement.START_OF_FUNCTION);
+		}
+		.)
+		( DeclVar | DeclFuncao ) .
+
+	DeclVar
+	= { ","  (. currExpr += " " +  t.val; .)
+			DesigI
+		} ";" (.
+			addVertexNaMain(TipoStatement.INSTRUCTION);
+		.)
+		.
+
+ 	DeclFuncao
+	= "(" (. currExpr += " " +  t.val; .)
+		[ Tipo DesigI
+		{ "," (. currExpr += " " +  t.val; .)
+			Tipo  DesigI } ] ")" (. currExpr += " " +  t.val; .)
+			CBlock
+		.
+
+	Tipo
+	= "int" (. currExpr = t.val; .) // novo statement
+	.
+
+	DesigI
+	= id (. currExpr += " " +  t.val; .) .
+
+	CBlock
+	= "{"
+		{ Definicao | Instrucao }
+		"}"
+		.
+
+	Instrucao (. currExpr = ""; .)
+	=
+		Designador ( Atrib | Parametros ) ";" (.
+			addVertexNaMain(TipoStatement.INSTRUCTION);
+		.)
+  | While (.
+		.)
+	| For (.
+		.)
+	| IfElse (.
+		.)
+	| Return (.
+			addVertexNaMain(TipoStatement.LEAVE_FUNCTION);
+			currExpr = "";
+	  .)
+	| Printf (.
+			addVertexNaMain(TipoStatement.INSTRUCTION);
+		.)
+	| Scanf (.
+			addVertexNaMain(TipoStatement.INSTRUCTION);
+	 .)
+	| CBlock (.
+		.)
+	| ";"
+	.
+
+	Atrib
+	= "=" (. currExpr += " " +  t.val; .)
+		Expr .
+
+	While
+	= "while" (. currExpr = t.val; .) // novo statement
+		"("     (. currExpr += " " +  t.val; .)
+		Condicao
+		")" (.
+			currExpr += t.val;
+			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF); // trata como um IF
+		.)
+		Instrucao (.
+			grafoMain.addEdge(getLastVertex(), parentVertex, "");
+
+		 	((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex);
+		.)
+		.
+
+	For
+	= "for"   (. currExpr = t.val; .) // novo statement
+		"("     (. currExpr += " " +  t.val; .)
+		Designador Atrib
+		";"     (. currExpr += " " +  t.val; .)
+		Condicao
+		";"     (. currExpr += " " +  t.val; .)
+		Designador Atrib
+		")" (.
+			currExpr +=  t.val;
+			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF); // trata como um iF
+		.)
+		Instrucao (.
+			grafoMain.addEdge(getLastVertex(), parentVertex, "");
+
+		 	((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex);
+		.)
+		.
+
+	IfElse
+	= "if" (. currExpr = t.val; .) // novo statement
+		"("  (. currExpr += " " +  t.val; .)
+		Condicao
+		")" (.
+			currExpr +=  t.val;
+			ArrayList<Vertex> vertexesScope = new ArrayList();
+			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF);
+			Vertex controlVertex = addControlVertex();
+		.)
+		Instrucao (. if (getLastVertex() != parentVertex) vertexesScope.add(getLastVertex()); .)
+		(
+		"else"    (. ((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex); .)
+		Instrucao (. if (getLastVertex() != parentVertex) vertexesScope.add(getLastVertex()); .)
+		|         (. setLastVertex(parentVertex); .)
+		)
+		(.
+			for (Vertex w : vertexesScope) {
+				String label = "";
+				TipoStatement wkind = ((Statement)w.info).kind;
+				if (wkind.isConditional()) label = "F";
+				if (w != controlVertex && wkind != TipoStatement.END_OF_FUNCTION) {
+					grafoMain.addEdge(w, controlVertex, label);
+				}
+			}
+
+			String label = "";
+			TipoStatement lastVertexKind = ((Statement)lastVertex.info).kind;
+			if (lastVertexKind.isConditional()) label = "F";
+			if (lastVertex != controlVertex && lastVertexKind != TipoStatement.END_OF_FUNCTION) {
+				grafoMain.addEdge(lastVertex, controlVertex, label);
+			}
+
+			setLastVertex(controlVertex);
+		.)
+		.
+
+	Return
+	= "return" (. currExpr = t.val; .)
+		(Expr | )
+		";".
+
+	Printf
+	= "printf" (. currExpr = t.val; .) // novo statement
+		"(" (. currExpr += " " +  t.val; .)
+		( strConst (. currExpr += " " +  t.val; .) | Expr ) {"," (. currExpr += " " +  t.val; .)
+		( strConst (. currExpr += " " +  t.val; .) | Expr ) }
+		")" (. currExpr += t.val; .)
+		";" .
+
+  Scanf /// FUCCCCCCCKKKKKKK this <<<<<
+	= "scanf" (. currExpr = t.val; .) // novo statement
+	  "("     (. currExpr += " " +  t.val; .)
+		Designador
+		")"     (. currExpr += t.val; .)
+		";" .
+
+  Parametros
+	= "(" (. currExpr += " " +  t.val; .)
+	[ Expr {
+		"," (. currExpr += " " +  t.val; .)
+		Expr } ]
+		")" (. currExpr += t.val; .) .
+
+	Condicao
+	= Expr OpRel Expr .
+
+	OpRel
+	= ( "==" | "!=" | ">" | ">=" | "<" | "<=" ) (. currExpr += " " +  t.val; .)
+	 .
+
+	Expr
+	= ( Termo | "-" (. currExpr += " " +  t.val; .) Termo ) {( "+" | "-" ) (. currExpr += " " +  t.val; .) Termo } .
+
+	Termo
+	= Fator {( "*" | "/" | "%" ) (. currExpr += " " +  t.val; .) Fator } .
+
+	Fator
+	=  Designador [ Parametros ]
+		| num    (. currExpr += " " +  t.val; .)
+		| "("    (. currExpr += " " +  t.val; .)
+		Expr ")" (. currExpr += " " +  t.val; .)
+		.
+
+	Designador
+	= id (. currExpr += " " + t.val; .) .
+
+END microc.
