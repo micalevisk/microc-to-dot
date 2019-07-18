@@ -29,7 +29,7 @@ public class Compile
 			if (p.errors.count > 0) {
 				System.out.println("\n" + "~> Quantidade de erros: " + p.errors.count);
 			} else {
-				p.printToDot();
+				p.d.mostrar();
 			}
 		}
 	}

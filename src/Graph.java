@@ -1,4 +1,4 @@
-// Marco Cristo, 2015, 2019
+// (c) Marco Cristo, 2015, 2019
 // Based on the book of Mark Allen Weiss on Data Structures
 
 import java.util.Collections;
@@ -157,6 +157,11 @@ public class Graph implements Cloneable {
   }
  }
 
+  // [new]
+  public void delVertex(Vertex v) {
+    if (v != null) delVertex(v.name, false);
+  }
+
  /**
   * Return the Vertex given by its name.
   */
@@ -224,12 +229,6 @@ public class Graph implements Cloneable {
   return getOutNeighbors(v);
  }
 
- // (c) ML
- public Vertex getFirstSuccessor(Vertex v) {
-  return v.adj.first().dest;
- }
-
-
  /**
   * Return list of edges over the neighbors of v (predecessors of v).
   * The predecessors of v are the nodes which v is pointed by
@@ -239,16 +238,6 @@ public class Graph implements Cloneable {
   for (Iterator<Edge> itr = v.padj.iterator(); itr.hasNext();) {
    Edge e = (Edge) itr.next();
    edgeList.add((Vertex) e.dest);
-  }
-  return edgeList;
- }
-
- // (c) ML
- public LinkedList < Edge > getPredecessorsEdges(Vertex v) {
-  LinkedList < Edge > edgeList = new LinkedList < Edge > ();
-  for (Iterator<Edge> itr = v.padj.iterator(); itr.hasNext();) {
-   Edge e = (Edge) itr.next();
-   edgeList.add(e);
   }
   return edgeList;
  }

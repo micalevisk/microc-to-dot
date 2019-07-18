@@ -1,126 +1,61 @@
 /*
-	microc
-*/
+ * microc
+ */
 
-import java.io.*;
 import java.util.*;
-
 
 COMPILER microc
 
-// ---------------------------------------------- Parser  ---------------------------------------------- //
-private Stack<Pair<TipoStatement,Vertex>> flowStack = new Stack<>();
-private Graph grafoMain = null;
-private Vertex lastVertex = null;
-private Vertex stopVertex = null;
-private String currExpr = "";
+Diagrama d = new Diagrama();
 
-
-private String getCurrExpr() {
-	return currExpr.trim()
-		.replaceFirst("[(] ", "(")
-		.replaceAll(" ([,;])", "$1")
-		.replaceAll("\"","'");
+private void atualizarTipo(Vertex verticeAlvo, int novoTipo) {
+	((VertexInfo) verticeAlvo.info).tipo = novoTipo;
 }
 
+private void definirTipoComoThen(Vertex v) {
+	atualizarTipo(v, VertexInfo.THEN);
+}
 
-private Vertex getFirstValidSuccessor(Vertex targetVertex) {
+private void definirTipoComoElse(Vertex v) {
+	atualizarTipo(v, VertexInfo.ELSE);
+}
+
+private Vertex criarVerticeConexao() {
+	d.setRotulo("C");
+	return d.criarVertice(VertexInfo.CONECTOR);
+}
+
+// v -> c -> ... -> foundVertex (enquanto não for CONECTOR)
+private Vertex encontrarPrimeiroSucessorValido(Vertex v) {
 	Vertex foundVertex = null;
-	LinkedList<Vertex> sucessors = grafoMain.getSuccessors(targetVertex);
+	LinkedList<Vertex> sucessors = d.g.getSuccessors(v);
 	for (Vertex s : sucessors) {
-		TipoStatement skind = ((Statement)s.info).kind;
-		if (skind != TipoStatement.CONTROL) return s;
-		else return getFirstValidSuccessor(s);
+		int stipo = ((VertexInfo)s.info).tipo;
+		return (stipo != VertexInfo.CONECTOR)
+			? s
+			: encontrarPrimeiroSucessorValido(s);
 	}
 	return foundVertex;
 }
 
-private void reachEndOfFunction(Vertex v) {
-	if (stopVertex == null) {
-		stopVertex = addVertexNaMain("stop", TipoStatement.END_OF_FUNCTION);
-	} else {
-		String label = "";
-		TipoStatement kind = ((Statement)v.info).kind;
-		if (kind == TipoStatement.CONDITIONAL_ELSE) label = "F";
-		grafoMain.addEdge(v, stopVertex, label);
-	}
-}
+private void removerVerticesDeConexao() {
+	ArrayList<Vertex> verticesDeConexaoResolvidos = new ArrayList();
+	for (Vertex v : d.g.getVertices()) {
+		for (Edge e : d.g.getEdges(v.name)) {
+			Vertex w = e.dest;
+			int wtipo = ((VertexInfo)w.info).tipo;
+			if (wtipo != VertexInfo.CONECTOR) continue;
 
-
-private int verticeCounter = 0;
-private Vertex addVertexNaMain(String statementName, TipoStatement kind, boolean linkToLast, String edgeLabel) {
-	if (grafoMain == null) return null;
-
-	int id = ++verticeCounter;
-	Statement st = new Statement(id, statementName, kind);
-	String vertexName = Integer.toString(id);
-	if (kind == TipoStatement.CONTROL) vertexName = statementName;
-	Vertex newVertex = grafoMain.addVertex(vertexName, st);
-
-	if (lastVertex != null) {
-		TipoStatement lastKind = ((Statement)lastVertex.info).kind;
-		// Definir a relação do start com a primeira instrução
-		if (lastKind == TipoStatement.START_OF_FUNCTION) {
-			st.setKind(TipoStatement.FIRST_STATEMENT);
-		}else if (lastKind == TipoStatement.CONDITIONAL_IF) {
-			edgeLabel = "T";
-		}else if (lastKind == TipoStatement.CONDITIONAL_ELSE) {
-			edgeLabel = "F";
+			Vertex verticeAlvoCorreto = encontrarPrimeiroSucessorValido(w);
+			e.dest = verticeAlvoCorreto; // atualizar a aresta para apontar para o vértice correto
+			verticesDeConexaoResolvidos.add(w); // salvar para apagar mais tarde
 		}
 	}
 
-	if (linkToLast) addEdgeTo(newVertex, edgeLabel);
-	lastVertex = newVertex;
-	if (kind == TipoStatement.LEAVE_FUNCTION) {
-		reachEndOfFunction(newVertex);
-	}
-
-	return newVertex;
-}
-private Vertex addVertexNaMain(String statementName, TipoStatement kind) {
-	return addVertexNaMain(statementName, kind, true, "");
-}
-private Vertex addVertexNaMain(TipoStatement kind) {
-	return addVertexNaMain(getCurrExpr(), kind);
-}
-
-private int verticeDeControleCounter = 0;
-private Vertex addControlVertex() {
-	int id = ++verticeDeControleCounter;
-	String vertexName = "C" + Integer.toString(id);
-	return grafoMain.addVertex(vertexName, new Statement(id, "C", TipoStatement.CONTROL));
-}
-
-public Vertex getLastVertex() {
-	return lastVertex;
-}
-public void setLastVertex(Vertex newLastVertex) {
-	lastVertex = newLastVertex;
-}
-
-private void addEdgeTo(Vertex targetVertex, String label) {
-	Vertex lastVertex = getLastVertex();
-	if (lastVertex != null ) {
-		grafoMain.addEdge(lastVertex.name, targetVertex.name, label);
-	}
-	currExpr = "";
-}
-private void addEdgeTo(Vertex targetVertex) {
-	addEdgeTo(targetVertex, "");
-}
-
-
-public void printToDot() {
-	DOTCom d = DOTCom.createFromGraph(grafoMain);
-	if (d == null) {
-		System.out.println("codigo-fonte invalido!");
-	} else {
-		d.print();
+	for (Vertex w : verticesDeConexaoResolvidos) {
+		d.g.delVertex(w);
 	}
 }
-
-
-// ----------------------------------------------------------------------------------------------------- //
 
 CHARACTERS
 	semAspas 	= ANY - '"'.
@@ -139,230 +74,169 @@ IGNORE '\r' + '\n' + '\t'
 PRODUCTIONS
 
 	microc
-	= { DeclConst } { Definicao }
-		(.
-			reachEndOfFunction(getLastVertex());
+	= {DeclConst} {Definicao} (.
+		d.alcancarStop(d.ultimoVertice);
+		removerVerticesDeConexao();
+	.) .
 
-			// fazer a magia AKA reduzir (squash) os vértices de controle
-			List< Pair< Vertex,Pair<Vertex,Edge> > > newEdgesToBuild = new ArrayList<>();
-			for (Vertex v : grafoMain.getVertices()) {
-				for (Edge e : grafoMain.getEdges(v.name)) { // aresta v -> w
-					TipoStatement wkind = ((Statement)e.dest.info).kind;
-					if (wkind == TipoStatement.CONTROL) {
-						Vertex verticeCorrigido = getFirstValidSuccessor(e.dest);
-						if (verticeCorrigido != null) {
-							newEdgesToBuild.add( Pair.of(
-								verticeCorrigido,
-								Pair.of(v, e)
-							) );
-						}
-					}
-				}
-			}
-			// apagar os vértices de controle e arestas associadas
-			for (Pair< Vertex,Pair<Vertex,Edge> > p : newEdgesToBuild) {
-				Vertex verticeCorrigido = p.getKey();
-				Vertex v = p.getValue().getKey();
-				Edge e = p.getValue().getValue();
+	DeclConst = "const" Tipo id "=" num ";" .
 
-				grafoMain.addEdge(v, verticeCorrigido, e.info);
-				grafoMain.delVertex(e.dest.name, false);
-			}
-		.)
-	.
-
-  DeclConst
-	= "const" Tipo id "=" num ";".
-
-	Definicao         (. boolean isFunctionMain = false; currExpr = ""; .)
-	= ( Tipo | "void" (. isFunctionMain = true; .) )
-		DesigI          (. isFunctionMain = isFunctionMain && t.val.equals("main"); .)
-		(.
-		if (isFunctionMain) {
-			grafoMain = new Graph();
-			addVertexNaMain("start", TipoStatement.START_OF_FUNCTION);
-		}
-		.)
-		( DeclVar | DeclFuncao ) .
+	Definicao
+	= ( Tipo | "void" (. d.setRotulo("start"); d.criarVertice(VertexInfo.START); .) )
+	  DesigI ( DeclVar | DeclFuncao ) .
 
 	DeclVar
-	= { ","  (. currExpr += " " +  t.val; .)
-			DesigI
-		} ";" (.
-			addVertexNaMain(TipoStatement.INSTRUCTION);
-		.)
-		.
+	= {"," (. d.acumularToken(t, ""); .)
+	  DesigI } ";" (. d.criarVertice(); .)
+  .
 
- 	DeclFuncao
-	= "(" (. currExpr += " " +  t.val; .)
-		[ Tipo DesigI
-		{ "," (. currExpr += " " +  t.val; .)
-			Tipo  DesigI } ] ")" (. currExpr += " " +  t.val; .)
-			CBlock
-		.
+  DeclFuncao = "(" [ Tipo DesigI {"," Tipo  DesigI	} ] ")" CBlock .
 
-	Tipo
-	= "int" (. currExpr = t.val; .) // novo statement
-	.
+	Tipo = "int" (. d.setRotulo(t.val); .) .
 
-	DesigI
-	= id (. currExpr += " " +  t.val; .) .
+	DesigI = id  (. d.acumularToken(t); .) .
 
-	CBlock
-	= "{"
-		{ Definicao | Instrucao }
-		"}"
-		.
+	CBlock = "{" {Definicao | Instrucao} "}" .
 
-	Instrucao (. currExpr = ""; .)
-	=
-		Designador ( Atrib | Parametros ) ";" (.
-			addVertexNaMain(TipoStatement.INSTRUCTION);
-		.)
-  | While (.
-		.)
-	| For (.
-		.)
-	| IfElse (.
-		.)
-	| Return (.
-			addVertexNaMain(TipoStatement.LEAVE_FUNCTION);
-			currExpr = "";
-	  .)
-	| Printf (.
-			addVertexNaMain(TipoStatement.INSTRUCTION);
-		.)
-	| Scanf (.
-			addVertexNaMain(TipoStatement.INSTRUCTION);
-	 .)
-	| CBlock (.
-		.)
+	Instrucao (. d.setRotulo(""); .)
+	= Designador ( Atrib | Parametros ) ";" (. d.criarVertice(); .)
+	| While
+	| For
+	| IfElse
+	| Return (. d.criarVertice(VertexInfo.RETURN); d.setRotulo(""); .)
+	| Printf (. d.criarVertice(VertexInfo.OTHER); .)
+	| Scanf  (. d.criarVertice(VertexInfo.OTHER); .)
+	| CBlock
 	| ";"
-	.
+    .
 
-	Atrib
-	= "=" (. currExpr += " " +  t.val; .)
-		Expr .
+	Atrib = "=" (. d.acumularToken(t); .) Expr .
 
 	While
-	= "while" (. currExpr = t.val; .) // novo statement
-		"("     (. currExpr += " " +  t.val; .)
-		Condicao
-		")" (.
-			currExpr += t.val;
-			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF); // trata como um IF
-		.)
-		Instrucao (.
-			grafoMain.addEdge(getLastVertex(), parentVertex, "");
-
-		 	((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex);
-		.)
-		.
+	= "while"    (. d.setRotulo(t.val); .)
+	"("          (. d.acumularToken(t); .)
+	Condicao ")" (. d.acumularToken(t); .)
+	(.
+		Vertex paiCorrente = d.criarVertice(VertexInfo.THEN);
+	.) Instrucao (.
+		d.linkarUltimoEAtualizar(paiCorrente);
+		definirTipoComoElse(paiCorrente);
+		d.setUltimoVertice(paiCorrente);
+	.) .
 
 	For
-	= "for"   (. currExpr = t.val; .) // novo statement
-		"("     (. currExpr += " " +  t.val; .)
-		Designador Atrib
-		";"     (. currExpr += " " +  t.val; .)
-		Condicao
-		";"     (. currExpr += " " +  t.val; .)
-		Designador Atrib
-		")" (.
-			currExpr +=  t.val;
-			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF); // trata como um iF
-		.)
-		Instrucao (.
-			grafoMain.addEdge(getLastVertex(), parentVertex, "");
-
-		 	((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex);
-		.)
-		.
+	= "for"              (. d.setRotulo(t.val); .)
+	"("                  (. d.acumularToken(t); .)
+	Designador Atrib ";" (. d.acumularToken(t); .)
+	Condicao ";"         (. d.acumularToken(t); .)
+	Designador Atrib ")" (.
+		d.acumularToken(t, "");
+		Vertex paiCorrente = d.criarVertice(VertexInfo.THEN);
+	.)
+	Instrucao (.
+		d.linkarUltimoEAtualizar(paiCorrente);
+		definirTipoComoElse(paiCorrente);
+		d.setUltimoVertice(paiCorrente);
+	.) .
 
 	IfElse
-	= "if" (. currExpr = t.val; .) // novo statement
-		"("  (. currExpr += " " +  t.val; .)
-		Condicao
-		")" (.
-			currExpr +=  t.val;
-			ArrayList<Vertex> vertexesScope = new ArrayList();
-			Vertex parentVertex = addVertexNaMain(TipoStatement.CONDITIONAL_IF);
-			Vertex controlVertex = addControlVertex();
-		.)
-		Instrucao (. if (getLastVertex() != parentVertex) vertexesScope.add(getLastVertex()); .)
-		(
-		"else"    (. ((Statement)parentVertex.info).setKind(TipoStatement.CONDITIONAL_ELSE); setLastVertex(parentVertex); .)
-		Instrucao (. if (getLastVertex() != parentVertex) vertexesScope.add(getLastVertex()); .)
-		|         (. setLastVertex(parentVertex); .)
-		)
-		(.
-			for (Vertex w : vertexesScope) {
-				String label = "";
-				TipoStatement wkind = ((Statement)w.info).kind;
-				if (wkind.isConditional()) label = "F";
-				if (w != controlVertex && wkind != TipoStatement.END_OF_FUNCTION) {
-					grafoMain.addEdge(w, controlVertex, label);
+	= "if"       (. d.setRotulo(t.val); .)
+	"("          (. d.acumularToken(t); .)
+	Condicao ")" (.
+		d.acumularToken(t, "");
+		Vertex paiCorrente = d.criarVertice(VertexInfo.THEN);
+		ArrayList<Vertex> lst = new ArrayList();
+	.)
+	Instrucao (.
+		// FIXME: não funciona pro caso: IF sem corpo e sem ELSE (ou ELSE sem corpo)
+		// boolean thenTemCorpo = d.ultimoVertice != paiCorrente;
+		lst.add(d.ultimoVertice);
+	.)
+	("else"   (. definirTipoComoElse(paiCorrente); d.setUltimoVertice(paiCorrente); .)
+	Instrucao (. lst.add(d.ultimoVertice);                                          .)
+	|         (. definirTipoComoElse(paiCorrente); d.setUltimoVertice(paiCorrente); .)
+	) (.
+		Vertex conector = criarVerticeConexao();
+
+		for (Vertex w : lst) {
+			if (w == conector) continue;
+			d.setUltimoVertice(w);
+
+			int lastVertexTipo = ((VertexInfo)d.ultimoVertice.info).tipo;
+			if (d.ultimoVertice != conector && lastVertexTipo != VertexInfo.STOP) {
+				int tipoPaiCorrente = ((VertexInfo)paiCorrente.info).tipo;
+				if (tipoPaiCorrente == VertexInfo.ELSE) { // para garantir que não sairão duas arestas T
+					definirTipoComoThen(paiCorrente);
+					tipoPaiCorrente = ((VertexInfo)paiCorrente.info).tipo;
 				}
-			}
 
-			String label = "";
-			TipoStatement lastVertexKind = ((Statement)lastVertex.info).kind;
-			if (lastVertexKind.isConditional()) label = "F";
-			if (lastVertex != controlVertex && lastVertexKind != TipoStatement.END_OF_FUNCTION) {
-				grafoMain.addEdge(lastVertex, controlVertex, label);
+				d.linkarUltimoEAtualizar(conector);
 			}
+		}
 
-			setLastVertex(controlVertex);
-		.)
-		.
+		int lastVertexTipo = ((VertexInfo)d.ultimoVertice.info).tipo;
+		if (d.ultimoVertice != conector && lastVertexTipo != VertexInfo.STOP) {
+			d.linkarUltimoEAtualizar(conector);
+		}
+
+		d.setUltimoVertice(conector);
+	.) .
 
 	Return
-	= "return" (. currExpr = t.val; .)
-		(Expr | )
-		";".
+	= "return" (. d.setRotulo(t.val); .)
+	( Expr | ) ";".
 
 	Printf
-	= "printf" (. currExpr = t.val; .) // novo statement
-		"(" (. currExpr += " " +  t.val; .)
-		( strConst (. currExpr += " " +  t.val; .) | Expr ) {"," (. currExpr += " " +  t.val; .)
-		( strConst (. currExpr += " " +  t.val; .) | Expr ) }
-		")" (. currExpr += t.val; .)
-		";" .
+	= "printf"     (. d.setRotulo(t.val); .)
+	"("            (. d.acumularToken(t); .)
+	( strConst     (. d.acumularToken(t); .)
+	| Expr ) {","  (. d.acumularToken(t); .)
+	( strConst     (. d.acumularToken(t); .)
+	| Expr ) } ")" (. d.acumularToken(t, ""); .) ";" .
 
-  Scanf /// FUCCCCCCCKKKKKKK this <<<<<
-	= "scanf" (. currExpr = t.val; .) // novo statement
-	  "("     (. currExpr += " " +  t.val; .)
-		Designador
-		")"     (. currExpr += t.val; .)
-		";" .
+	Scanf
+	= "scanf"      (. d.setRotulo(t.val); .)
+	"("            (. d.acumularToken(t); .)
+	Designador ")" (. d.acumularToken(t, ""); .)
+	";" .
 
-  Parametros
-	= "(" (. currExpr += " " +  t.val; .)
-	[ Expr {
-		"," (. currExpr += " " +  t.val; .)
-		Expr } ]
-		")" (. currExpr += t.val; .) .
+	Parametros
+	= "("        (. d.acumularToken(t,""); .)
+	[ Expr {","  (. d.acumularToken(t); .)
+	Expr } ] ")" (. d.acumularToken(t, ""); .) .
 
-	Condicao
-	= Expr OpRel Expr .
+	Condicao = Expr OpRel Expr .
 
 	OpRel
-	= ( "==" | "!=" | ">" | ">=" | "<" | "<=" ) (. currExpr += " " +  t.val; .)
-	 .
+	= ("==" | "!=" | ">" | ">=" | "<" | "<=")
+	(. d.acumularToken(t); .) .
 
 	Expr
-	= ( Termo | "-" (. currExpr += " " +  t.val; .) Termo ) {( "+" | "-" ) (. currExpr += " " +  t.val; .) Termo } .
+	= ( Termo | "-" (. d.acumularToken(t); .) Termo )
+	{( "+" | "-" )  (. d.acumularToken(t); .) Termo } .
 
 	Termo
-	= Fator {( "*" | "/" | "%" ) (. currExpr += " " +  t.val; .) Fator } .
+	= Fator {
+		( "*" | "/" | "%" ) (. d.acumularToken(t); .)
+	Fator } .
 
 	Fator
 	=  Designador [ Parametros ]
-		| num    (. currExpr += " " +  t.val; .)
-		| "("    (. currExpr += " " +  t.val; .)
-		Expr ")" (. currExpr += " " +  t.val; .)
-		.
+	| num  	(. d.acumularToken(t); .)
+	| "("   (. d.acumularToken(t, ""); .)
+	  Expr
+	  ")"   (. d.acumularToken(t); .)
+	.
 
 	Designador
-	= id (. currExpr += " " + t.val; .) .
+	= id (.
+		String tokensAcumulados = d.getRotulo();
+		String meio = "";
+		if (tokensAcumulados.length() > 0) {
+			char ultimoChar = tokensAcumulados.charAt(tokensAcumulados.length() - 1);
+			meio = (ultimoChar == '(') ? "" : " ";
+		}
+		d.acumularToken(t, meio);
+	.) .
 
 END microc.

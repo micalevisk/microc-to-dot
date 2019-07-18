@@ -10,7 +10,8 @@ set -e
 : '
 .
 ├── build.sh             <-
-├── Compilador.jar
+├── compile.sh
+├── Compilador.jar       (this will be created)
 ├── compiler_tools
 │   ├── Coco.jar
 │   ├── microc.atg
@@ -19,11 +20,10 @@ set -e
 ├── manifest.mf
 └── src
     ├── Compile.java
-    ├── DOTCom.java
-    ├── Graph.java
-    ├── Pair.java
-    ├── Statement.java
-    └── TipoStatement.java
+    ├── Diagrama.java
+    ├── EdgeInfo.java
+    ├── VertexInfo.java
+    └── Graph.java
 '
 ###################################################
 
@@ -34,7 +34,7 @@ exec 2>/dev/null
 
 while getopts "v" opt; do
   case $opt in
-    v)
+    v) ## enable verbose mode
       exec 1>&3 3>&-
       exec 2>&4 4>&-
     ;;
